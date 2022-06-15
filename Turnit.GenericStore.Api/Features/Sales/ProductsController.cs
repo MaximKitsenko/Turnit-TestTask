@@ -102,16 +102,17 @@ public class ProductsController : ApiControllerBase
         
         return result.ToArray();
     }
-    
+
     [HttpPut, Route("{productId:guid}/category/{categoryId:guid}")]
     public async Task<ActionResult> PutProduct(Guid categoryId, Guid productId)
     {
-        List<string> Validate(Task<Product> getProduct, Task<Category> getCategory, Task<ProductCategory> getProductCategory)
+        List<string> Validate(Task<Product> getProduct, Task<Category> getCategory,
+            Task<ProductCategory> getProductCategory)
         {
             var errorMsg = new List<string>();
             if (getProduct.Result == null)
             {
-                errorMsg.Add("Product Doesn't exist. "); 
+                errorMsg.Add("Product Doesn't exist. ");
             }
 
             if (getCategory.Result == null)
@@ -127,32 +128,35 @@ public class ProductsController : ApiControllerBase
             return errorMsg;
         }
 
-        var productTask = _session.GetAsync<Product>(productId);
-        var categoryTask = _session.GetAsync<Category>(categoryId);
-        var productCategoryTask = _session
-            .QueryOver<ProductCategory>()
-            .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
-
-        await Task.WhenAll(productTask, categoryTask,productCategoryTask);
-
-        var validationRes = Validate(productTask, categoryTask, productCategoryTask);
-        if (validationRes.Count > 0)
+        using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
         {
-            var errMsg = string.Join(";",validationRes);
-            return BadRequest(errMsg);
+            var productTask = _session.GetAsync<Product>(productId);
+            var categoryTask = _session.GetAsync<Category>(categoryId);
+            var productCategoryTask = _session
+                .QueryOver<ProductCategory>()
+                .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
+
+            await Task.WhenAll(productTask, categoryTask, productCategoryTask);
+
+            var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+            if (validationRes.Count > 0)
+            {
+                var errMsg = string.Join(";", validationRes);
+                return BadRequest(errMsg);
+            }
+
+            var productCategory = new ProductCategory()
+            {
+                Category = categoryTask.Result,
+                Product = productTask.Result
+            };
+            await _session.PersistAsync(productCategory);
+            await tx.CommitAsync();
         }
 
-        var productCategory = new ProductCategory()
-        {
-            Category = categoryTask.Result,
-            Product = productTask.Result
-        };
-        await _session.PersistAsync(productCategory);
-        await _session.FlushAsync();
-        
         return Ok();
     }
-    
+
     [HttpDelete, Route("{productId:guid}/category/{categoryId:guid}")]
     public async Task<IActionResult > DeleteProduct(Guid categoryId, Guid productId)
     {
@@ -176,25 +180,28 @@ public class ProductsController : ApiControllerBase
 
             return errorMsg;
         }
-
-        var productTask = _session.GetAsync<Product>(productId);
-        var categoryTask = _session.GetAsync<Category>(categoryId);
-        var productCategoryTask = _session
-            .QueryOver<ProductCategory>()
-            .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
-
-        await Task.WhenAll(productTask, categoryTask,productCategoryTask);
-
-        var validationRes = Validate(productTask, categoryTask, productCategoryTask);
-
-        if (validationRes.Count > 0)
-        {
-            var errMsg = string.Join(";",validationRes);
-            return BadRequest(errMsg);
-        }
         
-        await _session.DeleteAsync(productCategoryTask.Result);
-        await _session.FlushAsync();
+        using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
+        {
+            var productTask = _session.GetAsync<Product>(productId);
+            var categoryTask = _session.GetAsync<Category>(categoryId);
+            var productCategoryTask = _session
+                .QueryOver<ProductCategory>()
+                .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
+
+            await Task.WhenAll(productTask, categoryTask,productCategoryTask);
+
+            var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+
+            if (validationRes.Count > 0)
+            {
+                var errMsg = string.Join(";",validationRes);
+                return BadRequest(errMsg);
+            }
+        
+            await _session.DeleteAsync(productCategoryTask.Result);
+            await tx.CommitAsync();
+        }
         
         return Ok();
     }
@@ -228,42 +235,43 @@ public class ProductsController : ApiControllerBase
             return errorMsg;
         }
 
-        var tr = _session.BeginTransaction(IsolationLevel.RepeatableRead);
-        
-        var productTask = _session
-            .QueryOver<ProductAvailability>()
-            .Where(x => x.Product.Id == productId)
-            .ListAsync<ProductAvailability>();
-        
-        await Task.WhenAll(productTask);
-
-        var validationRes = Validate(productTask.Result, bookModelInfo.Qty);
-        if (validationRes.Count > 0)
+        using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
         {
-            var errMsg = string.Join(";",validationRes);
-            return BadRequest(errMsg);
+            var productTask = _session
+                .QueryOver<ProductAvailability>()
+                .Where(x => x.Product.Id == productId)
+                .ListAsync<ProductAvailability>();
+
+            await Task.WhenAll(productTask);
+
+            var validationRes = Validate(productTask.Result, bookModelInfo.Qty);
+            if (validationRes.Count > 0)
+            {
+                var errMsg = string.Join(";", validationRes);
+                return BadRequest(errMsg);
+            }
+
+            var bookQty = bookModelInfo.Qty;
+            for (var i = 0; i < productTask.Result.Count && bookQty > 0; i++)
+            {
+                if (productTask.Result[i].Availability > bookQty)
+                {
+                    productTask.Result[i].Availability -= bookQty;
+                    await _session.SaveOrUpdateAsync(productTask.Result[i]);
+                    bookQty = 0;
+                    break;
+                }
+                else
+                {
+                    bookQty -= productTask.Result[i].Availability;
+                    productTask.Result[i].Availability = 0;
+                    await _session.SaveOrUpdateAsync(productTask.Result[i]);
+                }
+            }
+
+            await tx.CommitAsync();
         }
 
-        var bookQty = bookModelInfo.Qty;
-        for (var i = 0; i < productTask.Result.Count && bookQty > 0; i++)
-        {
-            if (productTask.Result[i].Availability > bookQty)
-            {
-                productTask.Result[i].Availability -= bookQty;
-                await _session.SaveOrUpdateAsync(productTask.Result[i]);
-                bookQty = 0;
-                break;
-            }
-            else
-            {
-                bookQty -= productTask.Result[i].Availability;
-                productTask.Result[i].Availability = 0;
-                await _session.SaveOrUpdateAsync(productTask.Result[i]);
-            }
-        }
-
-        await _session.FlushAsync();
-        await tr.CommitAsync();
         return Ok();
     }
 }
