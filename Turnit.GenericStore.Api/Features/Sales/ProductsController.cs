@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Web;
@@ -195,6 +196,74 @@ public class ProductsController : ApiControllerBase
         await _session.DeleteAsync(productCategoryTask.Result);
         await _session.FlushAsync();
         
+        return Ok();
+    }
+    
+    [HttpPost, Route("{productId:guid}/book")]
+    public async Task<ActionResult> BookProduct([FromRoute]Guid productId, [FromBody] BookModel bookModelInfo)
+    {
+        List<string> Validate(IList<ProductAvailability> getProduct, int bookQty)
+        {
+            var errorMsg = new List<string>();
+            if (bookQty <1)
+            {
+                errorMsg.Add("We can book only 1 or more. ");
+                return errorMsg;
+            }
+
+            if (getProduct != null && getProduct.Any())
+            {
+                var sum = getProduct.Sum(x => x.Availability);
+                if (sum < bookQty)
+                {
+                    errorMsg.Add($"There are {sum} products but, you are trying to book {bookQty}"); 
+                }
+            }
+            else
+            {
+                errorMsg.Add("Product Doesn't exist in stores. "); 
+            }
+            
+
+            return errorMsg;
+        }
+
+        var tr = _session.BeginTransaction(IsolationLevel.RepeatableRead);
+        
+        var productTask = _session
+            .QueryOver<ProductAvailability>()
+            .Where(x => x.Product.Id == productId)
+            .ListAsync<ProductAvailability>();
+        
+        await Task.WhenAll(productTask);
+
+        var validationRes = Validate(productTask.Result, bookModelInfo.Qty);
+        if (validationRes.Count > 0)
+        {
+            var errMsg = string.Join(";",validationRes);
+            return BadRequest(errMsg);
+        }
+
+        var bookQty = bookModelInfo.Qty;
+        for (var i = 0; i < productTask.Result.Count && bookQty > 0; i++)
+        {
+            if (productTask.Result[i].Availability > bookQty)
+            {
+                productTask.Result[i].Availability -= bookQty;
+                await _session.SaveOrUpdateAsync(productTask.Result[i]);
+                bookQty = 0;
+                break;
+            }
+            else
+            {
+                bookQty -= productTask.Result[i].Availability;
+                productTask.Result[i].Availability = 0;
+                await _session.SaveOrUpdateAsync(productTask.Result[i]);
+            }
+        }
+
+        await _session.FlushAsync();
+        await tr.CommitAsync();
         return Ok();
     }
 }
