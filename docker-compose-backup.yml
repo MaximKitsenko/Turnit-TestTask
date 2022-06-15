@@ -1,0 +1,20 @@
+version: '3.3'
+services:
+  web:
+    build: ./Turnit.GenericStore.Api
+    ports:
+      - '5000:80'
+    links:
+      - postgres
+    environment:
+      - ConnectionStrings__Default=Server=postgres;Port=5432;Database=turnit_store;User ID=postgres;Password=postgres
+  postgres:
+    image: postgres:latest
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - '5632:5432'
+    volumes:
+      - ./sql/sql-dump.sql:/docker-entrypoint-initdb.d/init.sql
