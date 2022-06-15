@@ -24,9 +24,9 @@ namespace Turnit.GenericStore.Api
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
-
-            services.AddScoped(CreateSessionFactory);
-            services.AddScoped<ISession>(sp => sp.GetRequiredService<ISessionFactory>().OpenSession());
+            https://github.com/npgsql/npgsql/issues/3514#issuecomment-775919443
+            services.AddSingleton(CreateSessionFactory);
+            services.AddSingleton<ISession>(sp => sp.GetRequiredService<ISessionFactory>().OpenSession());
             
             services.AddSwaggerGen(x => x.SwaggerDoc("v1", new OpenApiInfo
             {
