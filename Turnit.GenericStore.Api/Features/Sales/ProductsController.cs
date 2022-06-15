@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Mvc;
 using NHibernate;
 using Turnit.GenericStore.Api.Entities;
@@ -102,30 +103,27 @@ public class ProductsController : ApiControllerBase
     }
     
     [HttpPut, Route("{productId:guid}/category/{categoryId:guid}")]
-    public async Task<OkResult> PutProduct(Guid categoryId,Guid productId)
+    public async Task<ActionResult> PutProduct(Guid categoryId, Guid productId)
     {
-        void Validate(Task<Product> getProduct, Task<Category> getCategory, Task<ProductCategory> getProductCategory)
+        List<string> Validate(Task<Product> getProduct, Task<Category> getCategory, Task<ProductCategory> getProductCategory)
         {
-            var errorMsg = "";
+            var errorMsg = new List<string>();
             if (getProduct.Result == null)
             {
-                errorMsg += "Product Doesn't exist. ";
+                errorMsg.Add("Product Doesn't exist. "); 
             }
 
             if (getCategory.Result == null)
             {
-                errorMsg += "Category Doesn't exist. ";
+                errorMsg.Add("Category Doesn't exist. ");
             }
 
             if (getProductCategory.Result != null)
             {
-                errorMsg += "Product already added to category. ";
+                errorMsg.Add("Product already added to category. ");
             }
 
-            if (!string.IsNullOrWhiteSpace(errorMsg))
-            {
-                throw new Exception(errorMsg);
-            }
+            return errorMsg;
         }
 
         var productTask = _session.GetAsync<Product>(productId);
@@ -136,7 +134,12 @@ public class ProductsController : ApiControllerBase
 
         await Task.WhenAll(productTask, categoryTask,productCategoryTask);
 
-        Validate(productTask, categoryTask, productCategoryTask);
+        var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+        if (validationRes.Count > 0)
+        {
+            var errMsg = string.Join(";",validationRes);
+            return BadRequest(errMsg);
+        }
 
         var productCategory = new ProductCategory()
         {
@@ -144,6 +147,53 @@ public class ProductsController : ApiControllerBase
             Product = productTask.Result
         };
         await _session.PersistAsync(productCategory);
+        await _session.FlushAsync();
+        
+        return Ok();
+    }
+    
+    [HttpDelete, Route("{productId:guid}/category/{categoryId:guid}")]
+    public async Task<IActionResult > DeleteProduct(Guid categoryId, Guid productId)
+    {
+        List<string> Validate(Task<Product> getProduct, Task<Category> getCategory, Task<ProductCategory> getProductCategory)
+        {
+            var errorMsg = new List<string>();
+            if (getProduct.Result == null)
+            {
+                errorMsg.Add("Product Doesn't exist. ");
+            }
+
+            if (getCategory.Result == null)
+            {
+                errorMsg.Add("Category Doesn't exist. ");
+            }
+
+            if (getProductCategory.Result == null)
+            {
+                errorMsg.Add( "Product is not in the category. ");
+            }
+
+            return errorMsg;
+        }
+
+        var productTask = _session.GetAsync<Product>(productId);
+        var categoryTask = _session.GetAsync<Category>(categoryId);
+        var productCategoryTask = _session
+            .QueryOver<ProductCategory>()
+            .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
+
+        await Task.WhenAll(productTask, categoryTask,productCategoryTask);
+
+        var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+
+        if (validationRes.Count > 0)
+        {
+            var errMsg = string.Join(";",validationRes);
+            return BadRequest(errMsg);
+        }
+        
+        await _session.DeleteAsync(productCategoryTask.Result);
+        await _session.FlushAsync();
         
         return Ok();
     }
