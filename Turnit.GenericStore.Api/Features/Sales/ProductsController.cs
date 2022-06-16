@@ -107,6 +107,112 @@ namespace Turnit.GenericStore.Api.Features.Sales
             return result.ToArray();
         }
 
+        [HttpGet, Route("")]
+        public async Task<ProductCategoryModel[]> AllProducts2()
+        {
+            var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
+            var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
+            var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
+            await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
+            var products = productsTask.Result;
+            var productCategories = productCategoriesTask.Result;
+            var productAvail = productAvailTask.Result;
+
+            var ppa = (
+                from p in products
+                join pa in productAvail on pa.Id equals p.Id
+                select (p, pa)).ToList();
+//
+//1
+//
+            ///            {
+            ///                 Product
+            ///                 Available []
+            ///                
+            ///            }
+            var productAvailabilityPairs = (
+                from product in products
+                join pa in productAvail
+                    on product.Id equals pa.Product.Id into gj
+                from subProd in gj.DefaultIfEmpty()
+                select new
+                {
+                    product,
+                    availability = subProd ?? null
+                });
+            var productAvailabilityList = productAvailabilityPairs
+                .GroupBy(x => x.product.Id)
+                .Select(x => new
+                {
+                    Product = x.FirstOrDefault()?.product,
+                    Availability = x.Select(y => y.availability).Where(z => z != null).ToList()
+                })
+                .ToList();
+            ///
+            ///
+            ///{
+            /// Product
+            /// Available []
+            /// Category?
+            /// }
+            ///
+            ///
+            ///
+            /// 
+            var ProductAvailabilityCategory =
+                //loj
+                from p in productAvailabilityList
+                join c in productCategories
+                    on p.Product.Id equals c.Product.Id into pr
+                from subPr in pr.DefaultIfEmpty()
+                select new
+                {
+                    ProductAvailability = p,
+                    Category = subPr ?? null
+                };
+
+            ///
+            ///{
+            /// category?
+            /// products [] {
+            ///         product
+            ///         availability []
+            ///     }
+            ///
+            ///
+            /// 
+            var categoryProducts = ProductAvailabilityCategory
+                .GroupBy(x => x?.Category?.Id ?? Guid.Empty)
+                .Select(y => new ProductCategoryModel
+                {
+                    CategoryId = y.Key,
+                    Products = y.Select(z => new ProductModel()
+                    {
+                        Availability = z.ProductAvailability.Availability.Select(k =>
+                            new ProductModel.AvailabilityModel()
+                            {
+                                Availability = k.Availability,
+                                StoreId = k.Store.Id
+                            }).ToArray(),
+                        Id = z.ProductAvailability.Product.Id,
+                        Name = z.ProductAvailability.Product.Name
+                    }).ToArray()
+                });
+            var result = categoryProducts.ToArray();
+            // var productModels = ppa.GroupBy(x => x.p.Id).Select(y => new ProductModel
+            // {
+            //     Id = y.Key,
+            //     Name = y.FirstOrDefault().p?.Name,
+            //     Availability = y.Select(x => new ProductModel.AvailabilityModel
+            //     {
+            //         StoreId = x.pa.Store.Id,
+            //         Availability = x.pa.Availability
+            //     }).ToArray()
+            // }).ToList();
+
+            return result;
+        }   
+
         [HttpPut, Route("{productId:guid}/category/{categoryId:guid}")]
         public async Task<ActionResult> PutProduct(Guid categoryId, Guid productId)
         {
