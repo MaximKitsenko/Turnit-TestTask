@@ -34,17 +34,23 @@ namespace Turnit.GenericStore.Api.Features.Sales
 
             var result = new List<ProductByCategoryModel>();
 
+            var productsIds = products.Select(t=>t.Id).ToList();    
+            var availabilityRaw = await _session.QueryOver<ProductAvailability>()
+                .WhereRestrictionOn(x=>x.Id)
+                .IsIn(productsIds)
+                    .ListAsync();
+
+            
+            // todo: can be improved with join. Example below in AllProducts. Have no time to fixe it 
             foreach (var product in products)
             {
-                var availability = await _session.QueryOver<ProductAvailability>()
-                    .Where(x => x.Product.Id == product.Id)
-                    .ListAsync();
-            
                 var model = new ProductByCategoryModel
                 {
                     Id = product.Id,
                     Name = product.Name,
-                    Availability = availability.Select(x => new ProductByCategoryModel.AvailabilityModel
+                    Availability = availabilityRaw
+                        .Where(x => x.Product.Id == product.Id)
+                        .Select(x => new ProductByCategoryModel.AvailabilityModel
                     {
                         StoreId = x.Store.Id,
                         Availability = x.Availability
