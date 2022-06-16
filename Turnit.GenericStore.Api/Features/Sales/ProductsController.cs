@@ -104,32 +104,26 @@ namespace Turnit.GenericStore.Api.Features.Sales
                 });
             }
         
-            return result.ToArray();
+            return result.OrderBy(x=>x.CategoryId).ToArray();
         }
 
-        [HttpGet, Route("")]
+        [HttpGet, Route("2")]
         public async Task<ProductCategoryModel[]> AllProducts2()
         {
-            var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
-            var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
-            var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
-            await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
-            var products = productsTask.Result;
-            var productCategories = productCategoriesTask.Result;
-            var productAvail = productAvailTask.Result;
+            IList<Product> products;
+            IList<ProductCategory> productCategories;
+            IList<ProductAvailability> productAvail;
+            using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
+            {
+                var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
+                var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
+                var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
+                await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
+                products = productsTask.Result;
+                productCategories = productCategoriesTask.Result;
+                productAvail = productAvailTask.Result;
+            }
 
-            var ppa = (
-                from p in products
-                join pa in productAvail on pa.Id equals p.Id
-                select (p, pa)).ToList();
-//
-//1
-//
-            ///            {
-            ///                 Product
-            ///                 Available []
-            ///                
-            ///            }
             var productAvailabilityPairs = (
                 from product in products
                 join pa in productAvail
@@ -148,68 +142,36 @@ namespace Turnit.GenericStore.Api.Features.Sales
                     Availability = x.Select(y => y.availability).Where(z => z != null).ToList()
                 })
                 .ToList();
-            ///
-            ///
-            ///{
-            /// Product
-            /// Available []
-            /// Category?
-            /// }
-            ///
-            ///
-            ///
-            /// 
-            var ProductAvailabilityCategory =
-                //loj
+            
+            var productAvailabilityCategory =
                 from p in productAvailabilityList
                 join c in productCategories
                     on p.Product.Id equals c.Product.Id into pr
                 from subPr in pr.DefaultIfEmpty()
                 select new
                 {
-                    ProductAvailability = p,
+                    //ProductAvailability = p,
+                    Product = p.Product,
+                    Availability = p.Availability,
                     Category = subPr ?? null
                 };
-
-            ///
-            ///{
-            /// category?
-            /// products [] {
-            ///         product
-            ///         availability []
-            ///     }
-            ///
-            ///
-            /// 
-            var categoryProducts = ProductAvailabilityCategory
-                .GroupBy(x => x?.Category?.Id ?? Guid.Empty)
+            
+            var categoryProducts = productAvailabilityCategory
+                .GroupBy(x => x?.Category?.Category.Id )
                 .Select(y => new ProductCategoryModel
                 {
                     CategoryId = y.Key,
                     Products = y.Select(z => new ProductModel()
                     {
-                        Availability = z.ProductAvailability.Availability.Select(k =>
-                            new ProductModel.AvailabilityModel()
-                            {
-                                Availability = k.Availability,
-                                StoreId = k.Store.Id
-                            }).ToArray(),
-                        Id = z.ProductAvailability.Product.Id,
-                        Name = z.ProductAvailability.Product.Name
+                        Availability = z.Availability
+                            .Select(k =>ProductModel.AvailabilityModel.From(k))
+                            .ToArray(),
+                        Id = z.Product.Id,
+                        Name = z.Product.Name
                     }).ToArray()
                 });
-            var result = categoryProducts.ToArray();
-            // var productModels = ppa.GroupBy(x => x.p.Id).Select(y => new ProductModel
-            // {
-            //     Id = y.Key,
-            //     Name = y.FirstOrDefault().p?.Name,
-            //     Availability = y.Select(x => new ProductModel.AvailabilityModel
-            //     {
-            //         StoreId = x.pa.Store.Id,
-            //         Availability = x.pa.Availability
-            //     }).ToArray()
-            // }).ToList();
-
+            var result = categoryProducts.OrderBy(x=>x.CategoryId).ToArray();
+            
             return result;
         }   
 

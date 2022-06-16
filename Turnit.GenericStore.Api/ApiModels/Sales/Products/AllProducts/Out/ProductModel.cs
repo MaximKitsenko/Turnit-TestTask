@@ -15,6 +15,15 @@ namespace Turnit.GenericStore.Api.ApiModels.Sales.Products.AllProducts.Out
             public Guid StoreId { get; set; }
         
             public int Availability { get; set; }
+            public static AvailabilityModel From(Turnit.GenericStore.Api.Entities.ProductAvailability pa)
+            {
+                return new AvailabilityModel()
+                {
+                    Availability = pa.Availability,
+                    StoreId = pa.Store.Id
+                };
+            }
         }
+
     }
 }

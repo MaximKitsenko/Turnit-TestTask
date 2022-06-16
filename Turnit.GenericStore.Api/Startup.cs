@@ -28,11 +28,16 @@ namespace Turnit.GenericStore.Api
             services.AddSingleton(CreateSessionFactory);
             services.AddSingleton<ISession>(sp => sp.GetRequiredService<ISessionFactory>().OpenSession());
             
-            services.AddSwaggerGen(x => x.SwaggerDoc("v1", new OpenApiInfo
+            services.AddSwaggerGen(x =>
             {
-                Version = "v1",
-                Title = "Turnit Store"
-            }));
+                x.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Version = "v1",
+                    Title = "Turnit Store"
+                });
+                
+                x.CustomSchemaIds(x => x.FullName);
+            });
         }
         
         private ISessionFactory CreateSessionFactory(IServiceProvider context)
