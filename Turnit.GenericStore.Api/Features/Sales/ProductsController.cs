@@ -56,8 +56,8 @@ namespace Turnit.GenericStore.Api.Features.Sales
             return result.ToArray();
         }
     
-        [HttpGet, Route("")]
-        public async Task<ProductCategoryModel[]> AllProducts()
+        [HttpGet, Route("backup")]
+        public async Task<ProductCategoryModel[]> AllProducts_Backup()
         {
             var products = await _session.QueryOver<Product>().ListAsync<Product>();
             var productCategories = await _session.QueryOver<ProductCategory>().ListAsync();
@@ -106,74 +106,6 @@ namespace Turnit.GenericStore.Api.Features.Sales
         
             return result.OrderBy(x=>x.CategoryId).ToArray();
         }
-
-        [HttpGet, Route("2")]
-        public async Task<ProductCategoryModel[]> AllProducts2()
-        {
-            IList<Product> products;
-            IList<ProductCategory> productCategories;
-            IList<ProductAvailability> productAvail;
-            using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
-            {
-                var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
-                var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
-                var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
-                await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
-                products = productsTask.Result;
-                productCategories = productCategoriesTask.Result;
-                productAvail = productAvailTask.Result;
-            }
-
-            var productAvailabilityPairs = (
-                from product in products
-                join pa in productAvail
-                    on product.Id equals pa.Product.Id into gj
-                from subProd in gj.DefaultIfEmpty()
-                select new
-                {
-                    product,
-                    availability = subProd ?? null
-                });
-            var productAvailabilityList = productAvailabilityPairs
-                .GroupBy(x => x.product.Id)
-                .Select(x => new
-                {
-                    Product = x.FirstOrDefault()?.product,
-                    Availability = x.Select(y => y.availability).Where(z => z != null).ToList()
-                })
-                .ToList();
-            
-            var productAvailabilityCategory =
-                from p in productAvailabilityList
-                join c in productCategories
-                    on p.Product.Id equals c.Product.Id into pr
-                from subPr in pr.DefaultIfEmpty()
-                select new
-                {
-                    //ProductAvailability = p,
-                    Product = p.Product,
-                    Availability = p.Availability,
-                    Category = subPr ?? null
-                };
-            
-            var categoryProducts = productAvailabilityCategory
-                .GroupBy(x => x?.Category?.Category.Id )
-                .Select(y => new ProductCategoryModel
-                {
-                    CategoryId = y.Key,
-                    Products = y.Select(z => new ProductModel()
-                    {
-                        Availability = z.Availability
-                            .Select(k =>ProductModel.AvailabilityModel.From(k))
-                            .ToArray(),
-                        Id = z.Product.Id,
-                        Name = z.Product.Name
-                    }).ToArray()
-                });
-            var result = categoryProducts.OrderBy(x=>x.CategoryId).ToArray();
-            
-            return result;
-        }   
 
         [HttpPut, Route("{productId:guid}/category/{categoryId:guid}")]
         public async Task<ActionResult> PutProduct(Guid categoryId, Guid productId)
@@ -277,7 +209,7 @@ namespace Turnit.GenericStore.Api.Features.Sales
         
             return Ok();
         }
-    
+
         [HttpPost, Route("{productId:guid}/book")]
         public async Task<ActionResult> BookProduct([FromRoute]Guid productId, [FromBody] BookModelIn bookModelIn)
         {
@@ -345,6 +277,73 @@ namespace Turnit.GenericStore.Api.Features.Sales
             }
 
             return Ok();
+        }
+
+        [HttpGet, Route("")]
+        public async Task<ProductCategoryModel[]> AllProducts()
+        {
+            IList<Product> products;
+            IList<ProductCategory> productCategories;
+            IList<ProductAvailability> productAvail;
+            using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
+            {
+                var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
+                var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
+                var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
+                await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
+                products = productsTask.Result;
+                productCategories = productCategoriesTask.Result;
+                productAvail = productAvailTask.Result;
+            }
+
+            var productAvailabilityPairs = (
+                from product in products
+                join pa in productAvail
+                    on product.Id equals pa.Product.Id into gj
+                from subProd in gj.DefaultIfEmpty()
+                select new
+                {
+                    product,
+                    availability = subProd ?? null
+                });
+            var productAvailabilityList = productAvailabilityPairs
+                .GroupBy(x => x.product.Id)
+                .Select(x => new
+                {
+                    Product = x.FirstOrDefault()?.product,
+                    Availability = x.Select(y => y.availability).Where(z => z != null).ToList()
+                })
+                .ToList();
+            
+            var productAvailabilityCategory =
+                from p in productAvailabilityList
+                join c in productCategories
+                    on p.Product.Id equals c.Product.Id into pr
+                from subPr in pr.DefaultIfEmpty()
+                select new
+                {
+                    Product = p.Product,
+                    Availability = p.Availability,
+                    Category = subPr ?? null
+                };
+            
+            var categoryProducts = productAvailabilityCategory
+                .GroupBy(x => x?.Category?.Category.Id )
+                .Select(y => new ProductCategoryModel
+                {
+                    CategoryId = y.Key,
+                    Products = y.Select(z => new ProductModel()
+                    {
+                        Availability = z.Availability
+                            .Select(k =>ProductModel.AvailabilityModel.From(k))
+                            .ToArray(),
+                        Id = z.Product.Id,
+                        Name = z.Product.Name
+                    }).ToArray()
+                });
+            var result = categoryProducts.OrderBy(x=>x.CategoryId).ToArray();
+            
+            return result;
         }
     }
 }
