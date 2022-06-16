@@ -1,26 +1,27 @@
 using System;
 using FluentNHibernate.Mapping;
 
-namespace Turnit.GenericStore.Api.Entities;
-
-public class ProductCategory
+namespace Turnit.GenericStore.Api.Entities
 {
-    public virtual Guid Id { get; set; }
-
-    public virtual Product Product { get; set; }
-
-    public virtual Category Category { get; set; }
-}
-
-public class ProductCategoryMap : ClassMap<ProductCategory>
-{
-    public ProductCategoryMap()
+    public class ProductCategory
     {
-        Schema("public");
-        Table("product_category");
+        public virtual Guid Id { get; set; }
 
-        Id(x => x.Id, "id");
-        References(x => x.Category, "category_id");
-        References(x => x.Product, "product_id");
+        public virtual Product Product { get; set; }
+
+        public virtual Category Category { get; set; }
+    }
+
+    public class ProductCategoryMap : ClassMap<ProductCategory>
+    {
+        public ProductCategoryMap()
+        {
+            Schema("public");
+            Table("product_category");
+
+            Id(x => x.Id, "id");
+            References(x => x.Category, "category_id");
+            References(x => x.Product, "product_id");
+        }
     }
 }

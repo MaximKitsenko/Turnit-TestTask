@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Mvc;
 using NHibernate;
 using NHibernate.Criterion;
+using Turnit.GenericStore.Api.ApiModels.Sales.Stores.RestockProduct.In;
 using Turnit.GenericStore.Api.Entities;
 
 namespace Turnit.GenericStore.Api.Features.Sales
