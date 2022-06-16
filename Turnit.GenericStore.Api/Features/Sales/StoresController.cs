@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Mvc;
 using NHibernate;
+using NHibernate.Criterion;
 using Turnit.GenericStore.Api.Entities;
 
 namespace Turnit.GenericStore.Api.Features.Sales
@@ -21,7 +22,7 @@ namespace Turnit.GenericStore.Api.Features.Sales
         }
 
         [HttpPost, Route("{storeId:guid}/restock")]
-        public async Task<ActionResult> BookProduct([FromRoute] Guid storeId, [FromBody] RestockModel restockModel)
+        public async Task<ActionResult> RestockProduct([FromRoute] Guid storeId, [FromBody] RestockModel restockModel)
         {
             List<string> Validate(Store store, IList<Product> products, RestockModel model)
             {
@@ -53,8 +54,9 @@ namespace Turnit.GenericStore.Api.Features.Sales
 
                 var productsIds = restockModel.Products.Select(x => x.Key).ToList();
                 var getProductsTask = _session.QueryOver<Product>()
-                    .wh(x => productsIds.Contains(x.Id))
-                    .ListAsync();
+                    .WhereRestrictionOn(x=>x.Id)
+                    .IsIn(productsIds)
+                    .ListAsync<Product>();
 
                 await Task.WhenAll(getStoreTask, getProductsTask);
 
