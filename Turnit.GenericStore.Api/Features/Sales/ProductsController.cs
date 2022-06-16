@@ -110,21 +110,21 @@ namespace Turnit.GenericStore.Api.Features.Sales
         [HttpPut, Route("{productId:guid}/category/{categoryId:guid}")]
         public async Task<ActionResult> PutProduct(Guid categoryId, Guid productId)
         {
-            List<string> Validate(Task<Product> getProduct, Task<Category> getCategory,
-                Task<ProductCategory> getProductCategory)
+            List<string> Validate(Product getProduct, Category getCategory,
+                ProductCategory getProductCategory)
             {
                 var errorMsg = new List<string>();
-                if (getProduct.Result == null)
+                if (getProduct == null)
                 {
                     errorMsg.Add("Product Doesn't exist. ");
                 }
 
-                if (getCategory.Result == null)
+                if (getCategory == null)
                 {
                     errorMsg.Add("Category Doesn't exist. ");
                 }
 
-                if (getProductCategory.Result != null)
+                if (getProductCategory != null)
                 {
                     errorMsg.Add("Product already added to category. ");
                 }
@@ -134,27 +134,26 @@ namespace Turnit.GenericStore.Api.Features.Sales
 
             using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
             {
-                var productTask = _session.GetAsync<Product>(productId);
-                var categoryTask = _session.GetAsync<Category>(categoryId);
-                var productCategoryTask = _session
+                var product = await _session.GetAsync<Product>(productId);
+                var category = await _session.GetAsync<Category>(categoryId);
+                var productCategory = await _session
                     .QueryOver<ProductCategory>()
                     .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
 
-                await Task.WhenAll(productTask, categoryTask, productCategoryTask);
 
-                var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+                var validationRes = Validate(product, category, productCategory);
                 if (validationRes.Count > 0)
                 {
                     var errMsg = string.Join(";", validationRes);
                     return BadRequest(errMsg);
                 }
 
-                var productCategory = new ProductCategory()
+                var productCategoryB = new ProductCategory()
                 {
-                    Category = categoryTask.Result,
-                    Product = productTask.Result
+                    Category = category,
+                    Product = product
                 };
-                await _session.PersistAsync(productCategory);
+                await _session.PersistAsync(productCategoryB);
                 await tx.CommitAsync();
             }
 
@@ -164,20 +163,20 @@ namespace Turnit.GenericStore.Api.Features.Sales
         [HttpDelete, Route("{productId:guid}/category/{categoryId:guid}")]
         public async Task<IActionResult > DeleteProduct(Guid categoryId, Guid productId)
         {
-            List<string> Validate(Task<Product> getProduct, Task<Category> getCategory, Task<ProductCategory> getProductCategory)
+            List<string> Validate(Product getProduct, Category getCategory, ProductCategory getProductCategory)
             {
                 var errorMsg = new List<string>();
-                if (getProduct.Result == null)
+                if (getProduct == null)
                 {
                     errorMsg.Add("Product Doesn't exist. ");
                 }
 
-                if (getCategory.Result == null)
+                if (getCategory == null)
                 {
                     errorMsg.Add("Category Doesn't exist. ");
                 }
 
-                if (getProductCategory.Result == null)
+                if (getProductCategory == null)
                 {
                     errorMsg.Add( "Product is not in the category. ");
                 }
@@ -187,15 +186,14 @@ namespace Turnit.GenericStore.Api.Features.Sales
         
             using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
             {
-                var productTask = _session.GetAsync<Product>(productId);
-                var categoryTask = _session.GetAsync<Category>(categoryId);
-                var productCategoryTask = _session
+                var product = await _session.GetAsync<Product>(productId);
+                var category = await _session.GetAsync<Category>(categoryId);
+                var productCategory = await _session
                     .QueryOver<ProductCategory>()
                     .Where(x => x.Product.Id == productId && x.Category.Id == categoryId).SingleOrDefaultAsync();
 
-                await Task.WhenAll(productTask, categoryTask,productCategoryTask);
 
-                var validationRes = Validate(productTask, categoryTask, productCategoryTask);
+                var validationRes = Validate(product, category, productCategory);
 
                 if (validationRes.Count > 0)
                 {
@@ -203,7 +201,7 @@ namespace Turnit.GenericStore.Api.Features.Sales
                     return BadRequest(errMsg);
                 }
         
-                await _session.DeleteAsync(productCategoryTask.Result);
+                await _session.DeleteAsync(productCategory);
                 await tx.CommitAsync();
             }
         
@@ -241,14 +239,12 @@ namespace Turnit.GenericStore.Api.Features.Sales
 
             using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
             {
-                var productTask = _session
+                var products = await _session
                     .QueryOver<ProductAvailability>()
                     .Where(x => x.Product.Id == productId)
                     .ListAsync<ProductAvailability>();
 
-                await Task.WhenAll(productTask);
-
-                var validationRes = Validate(productTask.Result, bookModelIn.Qty);
+                var validationRes = Validate(products, bookModelIn.Qty);
                 if (validationRes.Count > 0)
                 {
                     var errMsg = string.Join(";", validationRes);
@@ -256,20 +252,20 @@ namespace Turnit.GenericStore.Api.Features.Sales
                 }
 
                 var bookQty = bookModelIn.Qty;
-                for (var i = 0; i < productTask.Result.Count && bookQty > 0; i++)
+                for (var i = 0; i < products.Count && bookQty > 0; i++)
                 {
-                    if (productTask.Result[i].Availability > bookQty)
+                    if (products[i].Availability > bookQty)
                     {
-                        productTask.Result[i].Availability -= bookQty;
-                        await _session.SaveOrUpdateAsync(productTask.Result[i]);
+                        products[i].Availability -= bookQty;
+                        await _session.SaveOrUpdateAsync(products[i]);
                         bookQty = 0;
                         break;
                     }
                     else
                     {
-                        bookQty -= productTask.Result[i].Availability;
-                        productTask.Result[i].Availability = 0;
-                        await _session.SaveOrUpdateAsync(productTask.Result[i]);
+                        bookQty -= products[i].Availability;
+                        products[i].Availability = 0;
+                        await _session.SaveOrUpdateAsync(products[i]);
                     }
                 }
 
@@ -285,15 +281,11 @@ namespace Turnit.GenericStore.Api.Features.Sales
             IList<Product> products;
             IList<ProductCategory> productCategories;
             IList<ProductAvailability> productAvail;
-            using (var tx = _session.BeginTransaction(IsolationLevel.RepeatableRead))
+            using (var tx = _session.BeginTransaction(IsolationLevel.ReadCommitted))
             {
-                var productsTask = _session.QueryOver<Product>().ListAsync<Product>();
-                var productCategoriesTask = _session.QueryOver<ProductCategory>().ListAsync();
-                var productAvailTask = _session.QueryOver<ProductAvailability>().ListAsync();
-                await Task.WhenAll(productsTask, productCategoriesTask, productAvailTask);
-                products = productsTask.Result;
-                productCategories = productCategoriesTask.Result;
-                productAvail = productAvailTask.Result;
+                products = await _session.QueryOver<Product>().ListAsync<Product>();
+                productCategories = await _session.QueryOver<ProductCategory>().ListAsync();
+                productAvail = await _session.QueryOver<ProductAvailability>().ListAsync();
             }
 
             var productAvailabilityPairs = (

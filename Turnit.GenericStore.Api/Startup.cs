@@ -24,9 +24,13 @@ namespace Turnit.GenericStore.Api
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
-            https://github.com/npgsql/npgsql/issues/3514#issuecomment-775919443
+            
+            //https://nhibernate.info/doc/nhibernate-reference/transactions.html
+            // An ISessionFactory is an expensive-to-create, threadsafe object intended to be shared by all application threads.
+            // and 
+            //https://github.com/npgsql/npgsql/issues/3514#issuecomment-775919443
             services.AddSingleton(CreateSessionFactory);
-            services.AddSingleton<ISession>(sp => sp.GetRequiredService<ISessionFactory>().OpenSession());
+            services.AddTransient<ISession>(sp => sp.GetRequiredService<ISessionFactory>().OpenSession());
             
             services.AddSwaggerGen(x =>
             {
